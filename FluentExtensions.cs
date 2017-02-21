@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Fluent.Core
 {
-    public static class FluentContextExtensions
+    public static class FluentExtensions
     {
         public static IServiceCollection AddFluent(this IServiceCollection services)
         {
