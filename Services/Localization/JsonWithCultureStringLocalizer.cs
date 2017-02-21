@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 /// <summary>
 /// Author:         Ronald Wildenberg
@@ -14,9 +15,9 @@ namespace Fluent.Core.Services.Localization
     public class JsonWithCultureStringLocalizer : JsonStringLocalizer
     {
         private CultureInfo _culture;
-        
-        public JsonWithCultureStringLocalizer(string baseName, string applicationName, CultureInfo culture, ILogger logger)
-            : base(baseName, applicationName, logger)
+
+        public JsonWithCultureStringLocalizer(string baseName, string applicationName, CultureInfo culture, ILogger logger, IOptions<JsonLocalizationOptions> localizationOptions)
+            : base(baseName, applicationName, logger, localizationOptions)
         {
             if (baseName == null)
             {
@@ -33,6 +34,10 @@ namespace Fluent.Core.Services.Localization
             if (logger == null)
             {
                 throw new ArgumentNullException(nameof(logger));
+            }
+            if (localizationOptions == null)
+            {
+                throw new ArgumentNullException(nameof(localizationOptions));
             }
             
             this._culture = culture;

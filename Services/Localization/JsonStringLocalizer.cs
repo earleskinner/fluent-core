@@ -4,10 +4,14 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -24,9 +28,10 @@ namespace Fluent.Core.Services.Localization
         private readonly string _baseName;
         private readonly string _applicationName;
         private readonly ILogger _logger;
+        private readonly IOptions<JsonLocalizationOptions> _options;
         private readonly IEnumerable<string> _resourceFileLocations;
 
-        public JsonStringLocalizer(string baseName, string applicationName, ILogger logger)
+        public JsonStringLocalizer(string baseName, string applicationName, ILogger logger, IOptions<JsonLocalizationOptions> options)
         {
             if (baseName == null)
             {
@@ -40,10 +45,15 @@ namespace Fluent.Core.Services.Localization
             {
                 throw new ArgumentNullException(nameof(logger));
             }
-            
+            if (options == null)
+            {
+                throw new ArgumentNullException(nameof(options));
+            }
+
             this._baseName = baseName;
             this._applicationName = applicationName;
             this._logger = logger;
+            this._options = options;
 
             // Get a list of possible resource file locations.
             _resourceFileLocations = LocalizerUtil.ExpandPaths(baseName, applicationName).ToList();
@@ -97,7 +107,7 @@ namespace Fluent.Core.Services.Localization
         {
             if (culture == null)
             {
-                return new JsonStringLocalizer(_baseName, _applicationName, _logger);
+                return new JsonStringLocalizer(_baseName, _applicationName, _logger, _options);
             }
             throw new NotImplementedException();
         }
@@ -152,6 +162,10 @@ namespace Fluent.Core.Services.Localization
             var cultureSuffix = "." + currentCulture.Name;
             cultureSuffix = cultureSuffix == "." ? "" : cultureSuffix;
 
+            var assembly = Assembly.GetEntryAssembly();
+            var isAssembly = false;
+            Stream assemblyResourceStream = null;
+
             var lazyJObjectGetter = new Lazy<JObject>(() =>
             {
                 // First attempt to find a resource file location that exists.
@@ -162,6 +176,13 @@ namespace Fluent.Core.Services.Localization
                     if (File.Exists(resourcePath))
                     {
                         _logger.LogInformation($"Resource file location {resourcePath} found");
+                        isAssembly = false;
+                        break;
+                    }
+                    else if ((assemblyResourceStream = GetResourceObjectFromAssembly(resourcePath)) != null)
+                    {
+                        _logger.LogInformation($"Resource assembly location {resourcePath} found");
+                        isAssembly = true;
                         break;
                     }
                     else
@@ -179,16 +200,28 @@ namespace Fluent.Core.Services.Localization
                 // Found a resource file path: attempt to parse it into a JObject.
                 try
                 {
-                    var resourceFileStream =
+                    if (!isAssembly)
+                    {
+                        var resourceFileStream =
                         new FileStream(resourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-                    using (resourceFileStream)
+                        using (resourceFileStream)
+                        {
+                            var resourceReader =
+                                new JsonTextReader(new StreamReader(resourceFileStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true));
+                            using (resourceReader)
+                            {
+                                return JObject.Load(resourceReader);
+                            }
+                        }
+                    }
+                    else
                     {
                         var resourceReader =
-                            new JsonTextReader(new StreamReader(resourceFileStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true));
-                        using (resourceReader)
-                        {
-                            return JObject.Load(resourceReader);
-                        }
+                                new JsonTextReader(new StreamReader(assemblyResourceStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true));
+                            using (resourceReader)
+                            {
+                                return JObject.Load(resourceReader);
+                            }
                     }
                 }
                 catch (Exception e)
@@ -202,6 +235,24 @@ namespace Fluent.Core.Services.Localization
             lazyJObjectGetter = _resourceObjectCache.GetOrAdd(cultureSuffix, lazyJObjectGetter);
             var resourceObject = lazyJObjectGetter.Value;
             return resourceObject;
+        }
+
+        private Stream GetResourceObjectFromAssembly(string resourcePath)
+        {
+            foreach (var assembly in Assembly.GetEntryAssembly().GetReferencedAssemblies()
+                                             .Where(a => Regex.IsMatch(a.Name, _options.Value.AllowedAssembliesRegularExpression,
+                                                                       RegexOptions.IgnoreCase) ))
+            {
+                _logger.LogTrace($"Searching reference assembly {assembly.Name} for {resourcePath}");
+                var loaded = Assembly.Load(assembly);
+                Stream resourceStream = null;
+                if (loaded != null && (resourceStream = loaded.GetManifestResourceStream(resourcePath)) != null)
+                {
+                    _logger.LogInformation($"Found {resourcePath} in assembly {assembly.Name}");
+                    return resourceStream;
+                }
+            }
+            return null;
         }
 
         private string[] GetCultureSuffixes(CultureInfo currentCulture)

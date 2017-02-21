@@ -24,6 +24,7 @@ namespace Fluent.Core.Services.Localization
         
         private readonly IHostingEnvironment _applicationEnvironment;
         private readonly ILogger<JsonStringLocalizerFactory> _logger;
+        private readonly IOptions<JsonLocalizationOptions> _options;
         private string _resourcesRelativePath;
 
         public JsonStringLocalizerFactory(IHostingEnvironment applicationEnvironment,
@@ -45,7 +46,8 @@ namespace Fluent.Core.Services.Localization
 
             this._applicationEnvironment = applicationEnvironment;
             this._logger = logger;
-            
+            this._options = localizationOptions;
+
             _resourcesRelativePath = localizationOptions.Value.ResourcesPath ?? string.Empty;
             if (!string.IsNullOrEmpty(_resourcesRelativePath))
             {
@@ -69,17 +71,28 @@ namespace Fluent.Core.Services.Localization
             _logger.LogTrace($"Getting localizer for type {resourceSource}");
             
             var typeInfo = resourceSource.GetTypeInfo();
-            var assembly = typeInfo.Assembly;
+            var assemblyName = typeInfo.Assembly.GetName();
+            var resourceBaseName = string.Empty;
 
-            // Re-root the base name if a resources path is set.
-            var resourceBaseName = string.IsNullOrEmpty(_resourcesRelativePath)
+            if (Assembly.GetEntryAssembly().FullName != typeInfo.Assembly.FullName)
+            {
+                // Different logic if coming from another assembly
+                resourceBaseName = string.IsNullOrEmpty(_resourcesRelativePath)
+                ? typeInfo.FullName
+                : assemblyName.Name + "." + _resourcesRelativePath + "." + typeInfo.Name;
+            }
+            else
+            {
+                // Re-root the base name if a resources path is set.
+                resourceBaseName = string.IsNullOrEmpty(_resourcesRelativePath)
                 ? typeInfo.FullName
                 : _applicationEnvironment.ApplicationName + "." + _resourcesRelativePath +
                     LocalizerUtil.TrimPrefix(typeInfo.FullName, _applicationEnvironment.ApplicationName + ".");
+            }
             _logger.LogTrace($"Localizer basename: {resourceBaseName}");
 
             return _localizerCache.GetOrAdd(
-                resourceBaseName, new JsonStringLocalizer(resourceBaseName, _applicationEnvironment.ApplicationName, _logger));
+                resourceBaseName, new JsonStringLocalizer(resourceBaseName, _applicationEnvironment.ApplicationName, _logger, _options));
         }
 
         public IStringLocalizer Create(string baseName, string location)
@@ -105,7 +118,7 @@ namespace Fluent.Core.Services.Localization
             _logger.LogTrace($"Localizer basename: {resourceBaseName}");
             
             return _localizerCache.GetOrAdd(
-                resourceBaseName, new JsonStringLocalizer(resourceBaseName, _applicationEnvironment.ApplicationName, _logger));
+                resourceBaseName, new JsonStringLocalizer(resourceBaseName, _applicationEnvironment.ApplicationName, _logger, _options));
         }
     }
 }

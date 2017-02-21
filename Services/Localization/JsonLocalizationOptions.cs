@@ -8,5 +8,7 @@ namespace Fluent.Core.Services.Localization
     public class JsonLocalizationOptions
     {
         public string ResourcesPath { get; set; }
+
+        public string AllowedAssembliesRegularExpression { get; set; }
     }
 }

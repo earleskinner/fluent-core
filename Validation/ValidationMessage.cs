@@ -11,7 +11,7 @@ namespace Fluent.Core.Validation
         /// The type of error returned
         /// </summary>
         [JsonProperty("type")]
-        public string Type { get; set; }
+        public ValidationType Type { get; set; }
 
         /// <summary>
         /// A human-readable message providing more details about the error
