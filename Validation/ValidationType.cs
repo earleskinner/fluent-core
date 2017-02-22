@@ -8,6 +8,9 @@ namespace Fluent.Core.Validation
     public enum ValidationType
     {
         [EnumMember(Value = "system_error")]
-        System
+        System,
+
+        [EnumMember(Value = "input_error")]
+        Input
     }
 }
